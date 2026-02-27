@@ -17,10 +17,51 @@ export npm_config_cache="$NPM_CACHE_DIR"
 export npm_config_update_notifier=false
 export npm_config_fund=false
 export npm_config_audit=false
+export npm_config_loglevel=error
 
 # Pin npx tool versions (reduces drift)
 : "${ELECTRON_ASAR_PKG:=@electron/asar@4.0.1}"
 : "${ELECTRON_REBUILD_PKG:=@electron/rebuild@4.0.3}"
+# --- TOOLCHAIN (cached) (fork extension) ---
+TOOLS_DIR="$CODEX_TOOLCHAIN_CACHE/tools"
+TOOLS_NODE_BIN="$TOOLS_DIR/node_modules/.bin"
+ASAR_BIN="$TOOLS_NODE_BIN/asar"
+EREBUILD_BIN="$TOOLS_NODE_BIN/electron-rebuild"
+
+# Glob override target (2026 ecosystem): try v13 first; fallback if incompatible.
+: "${GLOB_OVERRIDE_VERSION:=^13.0.6}"
+
+install_tools() {
+  mkdir -p "$TOOLS_DIR"
+  if [ -x "$ASAR_BIN" ] && [ -x "$EREBUILD_BIN" ]; then
+    return 0
+  fi
+
+  info "Preparing cached toolchain in $TOOLS_DIR"
+
+  # First attempt: force glob 13 via npm overrides (dynamic hardening).
+  cat > "$TOOLS_DIR/package.json" <<EOFJSON
+{
+  "private": true,
+  "overrides": {
+    "glob": "${GLOB_OVERRIDE_VERSION}"
+  }
+}
+EOFJSON
+
+  # Install toolchain. If this fails (glob major incompat), fallback to no overrides.
+  (cd "$TOOLS_DIR" && npm install --no-fund --no-audit --ignore-scripts "$ELECTRON_ASAR_PKG" "$ELECTRON_REBUILD_PKG" >/dev/null 2>&1) || {
+    info "Toolchain install with glob override failed; falling back to default dependency graph"
+    cat > "$TOOLS_DIR/package.json" <<EOFJSON
+{ "private": true }
+EOFJSON
+    (cd "$TOOLS_DIR" && npm install --no-fund --no-audit --ignore-scripts "$ELECTRON_ASAR_PKG" "$ELECTRON_REBUILD_PKG" >/dev/null 2>&1)
+  }
+
+  [ -x "$ASAR_BIN" ] || error "Cached asar binary missing after toolchain install"
+  [ -x "$EREBUILD_BIN" ] || error "Cached electron-rebuild binary missing after toolchain install"
+}
+
 WORK_DIR="$(mktemp -d)"
 ARCH="$(uname -m)"
 
@@ -140,7 +181,8 @@ build_native_modules() {
     npm install "better-sqlite3@$bs3_ver" "node-pty@$npty_ver" --ignore-scripts 2>&1 >&2
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
-    npx --yes --package "$ELECTRON_REBUILD_PKG" -- electron-rebuild -v "$ELECTRON_VERSION" --force 2>&1 >&2
+    install_tools
+    "$EREBUILD_BIN" -v "$ELECTRON_VERSION" --force 2>&1 >&2
 
     info "Native modules built successfully"
 
@@ -160,7 +202,8 @@ patch_asar() {
 
     info "Extracting app.asar..."
     cd "$WORK_DIR"
-    npx --yes --package "$ELECTRON_ASAR_PKG" -- asar extract "$resources_dir/app.asar" app-extracted
+    install_tools
+    "$ASAR_BIN" extract "$resources_dir/app.asar" app-extracted
 
     # Copy unpacked native modules if they exist
     if [ -d "$resources_dir/app.asar.unpacked" ]; then
@@ -177,7 +220,8 @@ patch_asar() {
     # Repack
     info "Repacking app.asar..."
     cd "$WORK_DIR"
-    npx --yes --package "$ELECTRON_ASAR_PKG" -- asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
+    install_tools
+    "$ASAR_BIN" pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
 
     info "app.asar patched"
 }
