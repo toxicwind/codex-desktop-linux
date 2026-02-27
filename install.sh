@@ -160,7 +160,7 @@ patch_asar() {
 
     info "Extracting app.asar..."
     cd "$WORK_DIR"
-    npx --yes asar extract "$resources_dir/app.asar" app-extracted
+    npx --yes --package "$ELECTRON_ASAR_PKG" @electron/asar extract "$resources_dir/app.asar" app-extracted
 
     # Copy unpacked native modules if they exist
     if [ -d "$resources_dir/app.asar.unpacked" ]; then
@@ -177,7 +177,7 @@ patch_asar() {
     # Repack
     info "Repacking app.asar..."
     cd "$WORK_DIR"
-    npx asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
+    npx --yes --package "$ELECTRON_ASAR_PKG" @electron/asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
 
     info "app.asar patched"
 }
