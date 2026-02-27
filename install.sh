@@ -19,8 +19,8 @@ export npm_config_fund=false
 export npm_config_audit=false
 
 # Pin npx tool versions (reduces drift)
-: "${ELECTRON_ASAR_PKG:=@electron/asar@3.3.0}"
-: "${ELECTRON_REBUILD_PKG:=@electron/rebuild@3.6.0}"
+: "${ELECTRON_ASAR_PKG:=@electron/asar@4.0.1}"
+: "${ELECTRON_REBUILD_PKG:=@electron/rebuild@4.0.3}"
 WORK_DIR="$(mktemp -d)"
 ARCH="$(uname -m)"
 
@@ -140,7 +140,7 @@ build_native_modules() {
     npm install "better-sqlite3@$bs3_ver" "node-pty@$npty_ver" --ignore-scripts 2>&1 >&2
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
-    npx --yes --package "$ELECTRON_REBUILD_PKG" @electron/rebuild -v "$ELECTRON_VERSION" --force 2>&1 >&2
+    npx --yes --package "$ELECTRON_REBUILD_PKG" -- electron-rebuild -v "$ELECTRON_VERSION" --force 2>&1 >&2
 
     info "Native modules built successfully"
 
@@ -160,7 +160,7 @@ patch_asar() {
 
     info "Extracting app.asar..."
     cd "$WORK_DIR"
-    npx --yes --package "$ELECTRON_ASAR_PKG" @electron/asar extract "$resources_dir/app.asar" app-extracted
+    npx --yes --package "$ELECTRON_ASAR_PKG" -- asar extract "$resources_dir/app.asar" app-extracted
 
     # Copy unpacked native modules if they exist
     if [ -d "$resources_dir/app.asar.unpacked" ]; then
@@ -177,7 +177,7 @@ patch_asar() {
     # Repack
     info "Repacking app.asar..."
     cd "$WORK_DIR"
-    npx --yes --package "$ELECTRON_ASAR_PKG" @electron/asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
+    npx --yes --package "$ELECTRON_ASAR_PKG" -- asar pack app-extracted app.asar --unpack "{*.node,*.so,*.dylib}" 2>/dev/null
 
     info "app.asar patched"
 }
