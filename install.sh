@@ -9,6 +9,18 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$SCRIPT_DIR/codex-app}"
 ELECTRON_VERSION="40.0.0"
+# --- TOOLCHAIN CACHE (fork extension) ---
+: "${CODEX_TOOLCHAIN_CACHE:=${XDG_CACHE_HOME:-$HOME/.cache}/codex-desktop-linux}"
+NPM_CACHE_DIR="$CODEX_TOOLCHAIN_CACHE/npm-cache"
+mkdir -p "$NPM_CACHE_DIR"
+export npm_config_cache="$NPM_CACHE_DIR"
+export npm_config_update_notifier=false
+export npm_config_fund=false
+export npm_config_audit=false
+
+# Pin npx tool versions (reduces drift)
+: "${ELECTRON_ASAR_PKG:=@electron/asar@3.3.0}"
+: "${ELECTRON_REBUILD_PKG:=@electron/rebuild@3.6.0}"
 WORK_DIR="$(mktemp -d)"
 ARCH="$(uname -m)"
 
@@ -117,7 +129,7 @@ build_native_modules() {
     info "Native modules: better-sqlite3@$bs3_ver, node-pty@$npty_ver"
 
     # Build in a CLEAN directory (asar doesn't have full source)
-    local build_dir="$WORK_DIR/native-build"
+    local build_dir="$CODEX_TOOLCHAIN_CACHE/native-build/electron-$ELECTRON_VERSION/bs3-$bs3_ver/npty-$npty_ver"
     mkdir -p "$build_dir"
     cd "$build_dir"
 
@@ -128,7 +140,7 @@ build_native_modules() {
     npm install "better-sqlite3@$bs3_ver" "node-pty@$npty_ver" --ignore-scripts 2>&1 >&2
 
     info "Compiling for Electron v$ELECTRON_VERSION (this takes ~1 min)..."
-    npx --yes @electron/rebuild -v "$ELECTRON_VERSION" --force 2>&1 >&2
+    npx --yes --package "$ELECTRON_REBUILD_PKG" @electron/rebuild -v "$ELECTRON_VERSION" --force 2>&1 >&2
 
     info "Native modules built successfully"
 
