@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+START="${HOME}/.local/opt/codex-desktop/codex-app/start.sh"
+LOG="${HOME}/.local/state/codex-desktop/launch.log"
+mkdir -p "$(dirname "$LOG")"
+[[ -x "$START" ]] || { echo "Run repack first"; exit 1; }
+exec "$START" --ozone-platform-hint=auto "$@" >"$LOG" 2>&1 &
