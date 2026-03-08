@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="${CODEX_DESKTOP_ROOT:-$REPO_ROOT}"
+STATE_DIR="${HOME}/.local/state/codex-desktop"
+
+spawn_gui() {
+  local self="$1"
+  if command -v ghostty >/dev/null 2>&1; then
+    exec ghostty --title "Codex Live Status" -e "$self"
+  elif command -v kitty >/dev/null 2>&1; then
+    exec kitty --title "Codex Live Status" "$self"
+  elif command -v alacritty >/dev/null 2>&1; then
+    exec alacritty -t "Codex Live Status" -e "$self"
+  elif command -v xterm >/dev/null 2>&1; then
+    exec xterm -T "Codex Live Status" -e "$self"
+  else
+    echo "No terminal emulator found for --gui mode." >&2
+    exit 2
+  fi
+}
+
+if [[ "${1:-}" == "--gui" ]]; then
+  spawn_gui "$0"
+fi
+
+mkdir -p "$STATE_DIR"
+export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.npm-global/bin:$PATH"
+
+while true; do
+  clear
+  now="$(date -Is)"
+  current_cli="$(codex --version 2>/dev/null || echo 'codex-cli missing')"
+  latest_cli="$(npm view @openai/codex version --silent 2>/dev/null || echo 'unknown')"
+
+  repo_line="repo missing"
+  behind_line="n/a"
+  if [[ -d "$ROOT/.git" ]]; then
+    repo_line="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+    if git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+      behind="$(git -C "$ROOT" rev-list --count HEAD..@{u} 2>/dev/null || echo '?')"
+      ahead="$(git -C "$ROOT" rev-list --count @{u}..HEAD 2>/dev/null || echo '?')"
+      behind_line="ahead=$ahead behind=$behind"
+    fi
+  fi
+
+  cat <<EOF
+Codex Live Status
+=================
+Time:            $now
+Root:            $ROOT
+CLI current:     $current_cli
+CLI latest npm:  $latest_cli
+Repo head:       $repo_line
+Repo divergence: $behind_line
+
+Last updater lines
+------------------
+EOF
+  tail -n 12 "$STATE_DIR/update.log" 2>/dev/null || echo "(no update log yet)"
+
+  latest_launch="$(ls -t "$STATE_DIR"/launch_*.log 2>/dev/null | head -n1 || true)"
+  echo
+  echo "Last launch log: ${latest_launch:-none}"
+  echo "------------------"
+  if [[ -n "${latest_launch:-}" ]]; then
+    tail -n 20 "$latest_launch" 2>/dev/null || true
+  fi
+
+  echo
+  echo "Ctrl+C to exit. Refreshing in 2s..."
+  sleep 2
+done

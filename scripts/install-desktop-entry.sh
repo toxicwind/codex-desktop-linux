@@ -10,6 +10,7 @@ mkdir -p "$BIN_DIR" "$APP_DIR"
 # Keep launchers sourced from the repo, not piecemeal local copies.
 ln -sfn "${ROOT}/bin/codex-desktop" "${BIN_DIR}/codex-desktop"
 ln -sfn "${ROOT}/bin/codex-desktop-maintain" "${BIN_DIR}/codex-desktop-maintain"
+ln -sfn "${ROOT}/bin/codex-desktop-live-status" "${BIN_DIR}/codex-desktop-live-status"
 
 cat > "${APP_DIR}/codex-desktop-linux.desktop" <<INNER_EOF
 [Desktop Entry]
@@ -25,6 +26,17 @@ INNER_EOF
 # Remove old duplicates from previous installs.
 rm -f "${APP_DIR}/codex-desktop.desktop"
 
+cat > "${APP_DIR}/codex-desktop-live-status.desktop" <<INNER_EOF
+[Desktop Entry]
+Type=Application
+Name=Codex Live Status
+Comment=Live GUI terminal dashboard for codex-desktop update and launch logs
+Exec=${BIN_DIR}/codex-desktop-live-status --gui
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true
+INNER_EOF
+
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
 fi
@@ -34,3 +46,4 @@ echo "  ${APP_DIR}/codex-desktop-linux.desktop"
 echo "Linked binaries:"
 echo "  ${BIN_DIR}/codex-desktop"
 echo "  ${BIN_DIR}/codex-desktop-maintain"
+echo "  ${BIN_DIR}/codex-desktop-live-status"

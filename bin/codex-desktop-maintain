@@ -14,6 +14,7 @@ LOG_FILE="${STATE_DIR}/update.log"
 
 CHECK_INTERVAL="${CODEX_UPDATE_INTERVAL_SEC:-21600}" # 6h
 FORCE_REFRESH_EVERY_SEC="${CODEX_FORCE_REFRESH_EVERY_SEC:-604800}" # 7d
+CLI_AUTO_UPDATE="${CODEX_CLI_AUTO_UPDATE:-1}"
 
 mkdir -p "$STATE_DIR"
 touch "$LOG_FILE"
@@ -46,6 +47,57 @@ echo "$now" >"$STAMP_FILE"
     latest_nvm_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -n 1 || true)"
     if [[ -n "${latest_nvm_bin:-}" ]]; then
       export PATH="$latest_nvm_bin:$PATH"
+    fi
+  fi
+
+  semver_lt() {
+    [[ "$1" != "$2" ]] && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$1" ]]
+  }
+
+  if [[ "$CLI_AUTO_UPDATE" == "1" ]] && command -v npm >/dev/null 2>&1; then
+    current_cli="$(codex --version 2>/dev/null | awk '{print $2}' || true)"
+    latest_cli="$(npm view @openai/codex version --silent 2>/dev/null || true)"
+    if [[ -n "${latest_cli:-}" ]]; then
+      if [[ -z "${current_cli:-}" ]]; then
+        echo "[$(date -Is)] codex cli missing; installing @openai/codex@$latest_cli"
+        timeout 600s npm i -g "@openai/codex@$latest_cli" || true
+      elif semver_lt "$current_cli" "$latest_cli"; then
+        echo "[$(date -Is)] codex cli update: $current_cli -> $latest_cli"
+        timeout 600s npm i -g "@openai/codex@$latest_cli" || true
+      else
+        echo "[$(date -Is)] codex cli up-to-date: $current_cli"
+      fi
+    else
+      echo "[$(date -Is)] codex cli check skipped: npm view failed"
+    fi
+  fi
+
+  # Keep ~/.local/bin/codex aligned to the actively updated Node/NPM installation.
+  preferred_codex=""
+  if [[ -n "${latest_nvm_bin:-}" ]] && [[ -x "${latest_nvm_bin}/codex" ]]; then
+    preferred_codex="${latest_nvm_bin}/codex"
+  fi
+  if [[ -n "$preferred_codex" ]]; then
+    local_codex="${HOME}/.local/bin/codex"
+    mkdir -p "${HOME}/.local/bin"
+    if [[ ! -e "$local_codex" ]]; then
+      ln -s "$preferred_codex" "$local_codex"
+      echo "[$(date -Is)] codex cli linked: $local_codex -> $preferred_codex"
+    elif [[ -L "$local_codex" ]]; then
+      current_target="$(readlink -f "$local_codex" 2>/dev/null || true)"
+      desired_target="$(readlink -f "$preferred_codex" 2>/dev/null || true)"
+      if [[ -n "$desired_target" && "$current_target" != "$desired_target" ]]; then
+        ln -sfn "$preferred_codex" "$local_codex"
+        echo "[$(date -Is)] codex cli relinked: $local_codex -> $preferred_codex"
+      fi
+    else
+      local_ver="$("$local_codex" --version 2>/dev/null | awk '{print $2}' || true)"
+      pref_ver="$("$preferred_codex" --version 2>/dev/null | awk '{print $2}' || true)"
+      if [[ -n "$local_ver" && -n "$pref_ver" ]] && semver_lt "$local_ver" "$pref_ver"; then
+        mv -f "$local_codex" "${local_codex}.bak.$(date +%Y%m%d_%H%M%S)"
+        ln -s "$preferred_codex" "$local_codex"
+        echo "[$(date -Is)] codex cli replaced old local binary with symlink to updated npm path"
+      fi
     fi
   fi
 

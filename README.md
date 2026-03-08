@@ -73,6 +73,25 @@ Config knobs:
 - `CODEX_FORCE_UPDATE=1`: force maintenance now.
 - `CODEX_FORCE_REFRESH_EVERY_SEC=604800`: force DMG refresh cadence.
 
+## Live GUI status (no more blind updates)
+
+Open a live dashboard terminal window from app menu:
+
+- `Codex Live Status`
+
+Or run directly:
+
+```bash
+codex-desktop-live-status --gui
+```
+
+It continuously shows:
+
+- current Codex CLI version vs npm latest,
+- repo head/divergence,
+- tail of updater log,
+- tail of latest launch log.
+
 ### Manual update
 
 ```bash
