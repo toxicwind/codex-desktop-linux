@@ -1,123 +1,157 @@
-# Codex Desktop for Linux
+# Codex Desktop for Linux (Fork-Ready)
 
-Run [OpenAI Codex Desktop](https://openai.com/codex/) on Linux.
+Run [OpenAI Codex Desktop](https://openai.com/codex/) on Linux from a reproducible fork.
 
-The official Codex Desktop app is macOS-only. This project provides an automated installer that converts the macOS `.dmg` into a working Linux application.
+This repository converts the official macOS `Codex.dmg` into a Linux-runnable Electron app, installs a robust desktop launcher, and includes a background maintenance flow so installs are not piecemeal.
 
-## How it works
+## What this fork adds
 
-The installer:
+- Deterministic Linux repack from upstream DMG.
+- Native module rebuild for Linux (`better-sqlite3`, `node-pty`).
+- DMG cache refresh mode via `CODEX_REFRESH_DMG=1`.
+- Robust launcher with Wayland/X11 flags and startup logging.
+- Background maintenance worker (`codex-desktop-maintain`) for periodic update checks.
+- Desktop-entry installer that links launcher scripts from this repo.
 
-1. Extracts the macOS `.dmg` (using `7z`)
-2. Extracts `app.asar` (the Electron app bundle)
-3. Rebuilds native Node.js modules (`node-pty`, `better-sqlite3`) for Linux
-4. Removes macOS-only modules (`sparkle` auto-updater)
-5. Downloads Linux Electron (same version as the app — v40)
-6. Repacks everything and creates a launch script
+## Repo layout
+
+- `install.sh`: main repack/install pipeline.
+- `bin/codex-desktop`: launcher wrapper used by app menu.
+- `bin/codex-desktop-maintain`: background updater/maintenance process.
+- `scripts/install-desktop-entry.sh`: installs app-menu entry and symlinked launchers.
+- `scripts/fetch-dmg.sh`: quick DMG fetch helper.
 
 ## Prerequisites
 
-**Node.js 20+**, **npm**, **Python 3**, **7z**, **curl**, and **build tools** (gcc/g++/make).
+Install dependencies:
 
-### Debian/Ubuntu
+- Node.js 20+
+- npm
+- python3
+- p7zip
+- curl
+- unzip
+- build tools (`make`, `g++`)
 
-```bash
-sudo apt install nodejs npm python3 p7zip-full curl build-essential
-```
-
-### Fedora
-
-```bash
-sudo dnf install nodejs npm python3 p7zip curl
-sudo dnf groupinstall 'Development Tools'
-```
-
-### Arch
+### Arch Linux
 
 ```bash
-sudo pacman -S nodejs npm python p7zip curl base-devel
+sudo pacman -S nodejs npm python p7zip curl unzip base-devel
 ```
 
-You also need the **Codex CLI**:
+Install Codex CLI:
 
 ```bash
 npm i -g @openai/codex
 ```
 
-## Installation
-
-### Option A: Auto-download DMG
+## Quick start (fresh machine)
 
 ```bash
-git clone https://github.com/ilysenko/codex-desktop-linux.git
-cd codex-desktop-linux
-chmod +x install.sh
+git clone https://github.com/<your-user>/codex-desktop-linux.git ~/.local/opt/codex-desktop
+cd ~/.local/opt/codex-desktop
 ./install.sh
+./scripts/install-desktop-entry.sh
 ```
 
-### Option B: Provide your own DMG
+Then launch `Codex Desktop` from your app menu.
 
-Download `Codex.dmg` from [openai.com/codex](https://openai.com/codex/), then:
+## Updating
+
+### Fast updater path (recommended)
+
+Normal launches run `codex-desktop-maintain` in background. It:
+
+- rate-limits checks (default every 6h),
+- fetches/pulls repo updates,
+- reruns installer if needed.
+
+Config knobs:
+
+- `CODEX_AUTO_UPDATE=0`: disable background maintenance.
+- `CODEX_UPDATE_INTERVAL_SEC=21600`: check interval.
+- `CODEX_FORCE_UPDATE=1`: force maintenance now.
+- `CODEX_FORCE_REFRESH_EVERY_SEC=604800`: force DMG refresh cadence.
+
+### Manual update
 
 ```bash
-./install.sh /path/to/Codex.dmg
+cd ~/.local/opt/codex-desktop
+git pull --ff-only
+CODEX_REFRESH_DMG=1 ./install.sh
+./scripts/install-desktop-entry.sh
 ```
 
-## Usage
+## DMG cache behavior
 
-The app is installed into `codex-app/` next to the install script:
+`install.sh` reuses `Codex.dmg` by default.
 
-```bash
-codex-desktop-linux/codex-app/start.sh
-```
-
-Or add an alias to your shell:
-
-```bash
-echo 'alias codex-desktop="~/codex-desktop-linux/codex-app/start.sh"' >> ~/.bashrc
-```
-
-### Custom install directory
-
-```bash
-CODEX_INSTALL_DIR=/opt/codex ./install.sh
-```
-
-### Refreshing the DMG cache
-
-By default, `install.sh` reuses a cached `Codex.dmg` if it exists.
-Set `CODEX_REFRESH_DMG=1` to force re-download:
+Force re-download:
 
 ```bash
 CODEX_REFRESH_DMG=1 ./install.sh
 ```
 
-This is useful for auto-update wrappers that periodically rebuild from the latest upstream DMG.
+## Launcher behavior
 
-## How it works (technical details)
+`bin/codex-desktop` writes logs to:
 
-The macOS Codex app is an Electron application. The core code (`app.asar`) is platform-independent JavaScript, but it bundles:
+- `~/.local/state/codex-desktop/launch_*.log`
+- `~/.local/state/codex-desktop/update.log`
 
-- **Native modules** compiled for macOS (`node-pty` for terminal emulation, `better-sqlite3` for local storage, `sparkle` for auto-updates)
-- **Electron binary** for macOS
+Wayland/X11 switches:
 
-The installer replaces the macOS Electron with a Linux build and recompiles the native modules using `@electron/rebuild`. The `sparkle` module (macOS-only auto-updater) is removed since it has no Linux equivalent.
+- `CODEX_FORCE_X11=1 codex-desktop`
+- `CODEX_OZONE_MODE=force-wayland codex-desktop`
+- `CODEX_EXTRA_FLAGS='--disable-gpu' codex-desktop`
 
-A small Python HTTP server is used as a workaround: when `app.isPackaged` is `false` (which happens with extracted builds), the app tries to connect to a Vite dev server on `localhost:5175`. The HTTP server serves the static webview files on that port.
+## Fork and privacy workflow (GitHub)
+
+If you want to keep this private until public release:
+
+```bash
+# from repo root
+gh repo edit --visibility private
+```
+
+To publish later:
+
+```bash
+gh repo edit --visibility public
+```
+
+Typical safe push flow:
+
+```bash
+git fetch origin
+git rebase origin/main
+git push origin main
+```
+
+## Make sure nothing is piecemeal
+
+Use only repo-managed installers and launchers:
+
+```bash
+cd ~/.local/opt/codex-desktop
+./scripts/install-desktop-entry.sh
+```
+
+This ensures app-menu entries and `~/.local/bin` launchers point to repo files via symlink.
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| `Error: write EPIPE` | Make sure you're not piping the output — run `start.sh` directly |
-| Blank window | Check that port 5175 is not in use: `lsof -i :5175` |
-| `CODEX_CLI_PATH` error | Install CLI: `npm i -g @openai/codex` |
-| GPU/rendering issues | Try: `./codex-app/start.sh --disable-gpu` |
-| Sandbox errors | The `--no-sandbox` flag is already set in `start.sh` |
+- `Codex CLI not found`:
+  - install CLI (`npm i -g @openai/codex`)
+  - verify `~/.local/bin/codex` exists.
+- Blank window:
+  - ensure port `5175` is free: `lsof -i :5175`.
+- Startup crash:
+  - inspect latest launch log in `~/.local/state/codex-desktop/`.
 
 ## Disclaimer
 
-This is an unofficial community project. Codex Desktop is a product of OpenAI. This tool does not redistribute any OpenAI software — it automates the conversion process that users perform on their own copies.
+Unofficial community tooling. Codex Desktop is a product of OpenAI. This repo automates local conversion of your own upstream app package.
 
 ## License
 

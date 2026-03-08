@@ -1,6 +1,92 @@
 #!/usr/bin/env bash
-START="${HOME}/.local/opt/codex-desktop/codex-app/start.sh"
-LOG="${HOME}/.local/state/codex-desktop/launch.log"
-mkdir -p "$(dirname "$LOG")"
-[[ -x "$START" ]] || { echo "Run repack first"; exit 1; }
-exec "$START" --ozone-platform-hint=auto "$@" >"$LOG" 2>&1 &
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+DEFAULT_ROOT="$HOME/.local/opt/codex-desktop"
+if [[ -x "$REPO_ROOT/install.sh" ]]; then
+  ROOT="$REPO_ROOT"
+else
+  ROOT="$DEFAULT_ROOT"
+fi
+ROOT="${CODEX_DESKTOP_ROOT:-$ROOT}"
+
+START="${ROOT}/codex-app/start.sh"
+STATE_DIR="${HOME}/.local/state/codex-desktop"
+mkdir -p "$STATE_DIR"
+
+# Desktop launchers often provide a reduced PATH.
+export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.npm-global/bin:$PATH"
+if [[ -d "$HOME/.nvm/versions/node" ]]; then
+  latest_nvm_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -n 1 || true)"
+  if [[ -n "${latest_nvm_bin:-}" ]]; then
+    export PATH="$latest_nvm_bin:$PATH"
+  fi
+fi
+
+TS="$(date +%Y%m%d_%H%M%S)"
+LOG="${STATE_DIR}/launch_${TS}.log"
+MAINTAIN_LOG="${STATE_DIR}/maintain_spawn.log"
+
+if [[ "${CODEX_AUTO_UPDATE:-1}" == "1" ]] && [[ -x "${SCRIPT_DIR}/codex-desktop-maintain" ]]; then
+  nohup "${SCRIPT_DIR}/codex-desktop-maintain" >>"$MAINTAIN_LOG" 2>&1 </dev/null &
+fi
+
+if [[ ! -x "$START" ]]; then
+  echo "FATAL: missing $START"
+  exit 1
+fi
+
+OZONE_FLAGS=()
+if [[ "${CODEX_FORCE_X11:-0}" != "1" ]]; then
+  case "${CODEX_OZONE_MODE:-auto}" in
+    auto)
+      OZONE_FLAGS+=( "--ozone-platform-hint=auto" "--enable-features=UseOzonePlatform,WaylandWindowDecorations" )
+      ;;
+    force-wayland)
+      OZONE_FLAGS+=( "--ozone-platform=wayland" "--enable-features=UseOzonePlatform,WaylandWindowDecorations" )
+      ;;
+  esac
+fi
+
+EXTRA=()
+if [[ -n "${CODEX_EXTRA_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2206
+  EXTRA+=( ${CODEX_EXTRA_FLAGS} )
+fi
+
+(
+  echo "### codex-desktop launch"
+  echo "ts=$TS"
+  echo "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}"
+  echo "DISPLAY=${DISPLAY:-}"
+  echo "root=$ROOT"
+  echo "flags=${OZONE_FLAGS[*]} ${EXTRA[*]}"
+  echo "start=$START"
+  echo "----------------------------------------"
+  exec "$START" "${OZONE_FLAGS[@]}" "${EXTRA[@]}"
+) >"$LOG" 2>&1 &
+PID=$!
+
+sleep 2
+if ! kill -0 "$PID" >/dev/null 2>&1; then
+  echo
+  echo "Codex exited immediately. Log:"
+  echo "  $LOG"
+  echo "----------------------------------------"
+  tail -n 120 "$LOG" || true
+  echo "----------------------------------------"
+  echo "Try:"
+  echo "  CODEX_FORCE_X11=1 codex-desktop"
+  echo "  CODEX_OZONE_MODE=force-wayland codex-desktop"
+  echo "  CODEX_EXTRA_FLAGS='--disable-gpu' codex-desktop"
+  echo
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "Codex Desktop launch failed" "See log: $LOG"
+  fi
+  exit 1
+fi
+
+disown "$PID"

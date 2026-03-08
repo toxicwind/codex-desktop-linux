@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="${CODEX_DESKTOP_ROOT:-$REPO_ROOT}"
+INSTALLER="${ROOT}/install.sh"
+
+STATE_DIR="${HOME}/.local/state/codex-desktop"
+LOCK_FILE="${STATE_DIR}/update.lock"
+STAMP_FILE="${STATE_DIR}/last_update_check"
+LOG_FILE="${STATE_DIR}/update.log"
+
+CHECK_INTERVAL="${CODEX_UPDATE_INTERVAL_SEC:-21600}" # 6h
+FORCE_REFRESH_EVERY_SEC="${CODEX_FORCE_REFRESH_EVERY_SEC:-604800}" # 7d
+
+mkdir -p "$STATE_DIR"
+touch "$LOG_FILE"
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  exit 0
+fi
+
+now="$(date +%s)"
+last_check=0
+if [[ -f "$STAMP_FILE" ]]; then
+  last_check="$(cat "$STAMP_FILE" 2>/dev/null || echo 0)"
+fi
+
+if [[ "${CODEX_FORCE_UPDATE:-0}" != "1" ]] && (( now - last_check < CHECK_INTERVAL )); then
+  exit 0
+fi
+echo "$now" >"$STAMP_FILE"
+
+{
+  echo "[$(date -Is)] codex-desktop-maintain: start"
+  if [[ ! -d "$ROOT" || ! -x "$INSTALLER" ]]; then
+    echo "[$(date -Is)] missing root or installer: root=$ROOT installer=$INSTALLER"
+    exit 0
+  fi
+
+  export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.npm-global/bin:$PATH"
+  if [[ -d "$HOME/.nvm/versions/node" ]]; then
+    latest_nvm_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -n 1 || true)"
+    if [[ -n "${latest_nvm_bin:-}" ]]; then
+      export PATH="$latest_nvm_bin:$PATH"
+    fi
+  fi
+
+  changed=0
+  if command -v git >/dev/null 2>&1 && [[ -d "$ROOT/.git" ]]; then
+    (
+      cd "$ROOT"
+      timeout 30s git fetch --quiet origin || true
+      if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+        behind="$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)"
+        if [[ "$behind" =~ ^[0-9]+$ ]] && (( behind > 0 )); then
+          echo "[$(date -Is)] repo behind by $behind commit(s), pulling"
+          timeout 120s git pull --ff-only || true
+          changed=1
+        fi
+      fi
+    )
+  fi
+
+  if [[ ! -x "$ROOT/codex-app/start.sh" ]]; then
+    echo "[$(date -Is)] codex-app missing; reinstalling"
+    changed=1
+  fi
+
+  if (( changed > 0 )); then
+    refresh=0
+    dmg_file="$ROOT/Codex.dmg"
+    if [[ ! -s "$dmg_file" ]]; then
+      refresh=1
+    elif (( now - $(stat -c %Y "$dmg_file" 2>/dev/null || echo 0) > FORCE_REFRESH_EVERY_SEC )); then
+      refresh=1
+    fi
+    echo "[$(date -Is)] running installer (refresh_dmg=$refresh)"
+    CODEX_REFRESH_DMG="$refresh" timeout 1800s "$INSTALLER" || true
+  fi
+
+  echo "[$(date -Is)] codex-desktop-maintain: done"
+} >>"$LOG_FILE" 2>&1
