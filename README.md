@@ -83,6 +83,17 @@ echo 'alias codex-desktop="~/codex-desktop-linux/codex-app/start.sh"' >> ~/.bash
 CODEX_INSTALL_DIR=/opt/codex ./install.sh
 ```
 
+### Refreshing the DMG cache
+
+By default, `install.sh` reuses a cached `Codex.dmg` if it exists.
+Set `CODEX_REFRESH_DMG=1` to force re-download:
+
+```bash
+CODEX_REFRESH_DMG=1 ./install.sh
+```
+
+This is useful for auto-update wrappers that periodically rebuild from the latest upstream DMG.
+
 ## How it works (technical details)
 
 The macOS Codex app is an Electron application. The core code (`app.asar`) is platform-independent JavaScript, but it bundles:

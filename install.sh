@@ -112,12 +112,17 @@ Install them first:
 # ---- Download or find Codex DMG ----
 get_dmg() {
     local dmg_dest="$SCRIPT_DIR/Codex.dmg"
+    local refresh="${CODEX_REFRESH_DMG:-0}"
 
-    # Reuse existing DMG
-    if [ -s "$dmg_dest" ]; then
+    # Reuse existing DMG unless refresh is requested
+    if [ "$refresh" != "1" ] && [ -s "$dmg_dest" ]; then
         info "Using cached DMG: $dmg_dest ($(du -h "$dmg_dest" | cut -f1))"
         echo "$dmg_dest"
         return
+    fi
+
+    if [ "$refresh" = "1" ] && [ -s "$dmg_dest" ]; then
+        info "Refreshing cached DMG due to CODEX_REFRESH_DMG=1"
     fi
 
     info "Downloading Codex Desktop DMG..."
@@ -125,16 +130,17 @@ get_dmg() {
     info "URL: $dmg_url"
 
     if ! curl -L --progress-bar --max-time 600 --connect-timeout 30 \
-            -o "$dmg_dest" "$dmg_url"; then
-        rm -f "$dmg_dest"
+            -o "$dmg_dest.tmp" "$dmg_url"; then
+        rm -f "$dmg_dest.tmp"
         error "Download failed. Download manually and place as: $dmg_dest"
     fi
 
-    if [ ! -s "$dmg_dest" ]; then
-        rm -f "$dmg_dest"
+    if [ ! -s "$dmg_dest.tmp" ]; then
+        rm -f "$dmg_dest.tmp"
         error "Download produced empty file. Download manually and place as: $dmg_dest"
     fi
 
+    mv -f "$dmg_dest.tmp" "$dmg_dest"
     info "Saved: $dmg_dest ($(du -h "$dmg_dest" | cut -f1))"
     echo "$dmg_dest"
 }
@@ -276,8 +282,19 @@ install_app() {
 create_start_script() {
     cat > "$INSTALL_DIR/start.sh" << 'SCRIPT'
 #!/bin/bash
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEBVIEW_DIR="$SCRIPT_DIR/content/webview"
+
+# Desktop launchers often have a reduced PATH.
+export PATH="$HOME/.local/bin:$HOME/bin:$HOME/.npm-global/bin:$PATH"
+if [ -d "$HOME/.nvm/versions/node" ]; then
+  latest_nvm_bin="$(ls -d "$HOME"/.nvm/versions/node/*/bin 2>/dev/null | tail -n 1 || true)"
+  if [ -n "${latest_nvm_bin:-}" ]; then
+    export PATH="$latest_nvm_bin:$PATH"
+  fi
+fi
 
 pkill -f "http.server 5175" 2>/dev/null
 sleep 0.3
@@ -289,7 +306,28 @@ if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
     trap "kill $HTTP_PID 2>/dev/null" EXIT
 fi
 
-export CODEX_CLI_PATH="${CODEX_CLI_PATH:-$(which codex 2>/dev/null)}"
+resolve_codex_cli() {
+  if [ -n "${CODEX_CLI_PATH:-}" ] && [ -x "$CODEX_CLI_PATH" ]; then
+    printf '%s\n' "$CODEX_CLI_PATH"
+    return 0
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    command -v codex
+    return 0
+  fi
+  if [ -x "$HOME/.local/bin/codex" ]; then
+    printf '%s\n' "$HOME/.local/bin/codex"
+    return 0
+  fi
+  nvm_guess="$(ls "$HOME"/.nvm/versions/node/*/bin/codex 2>/dev/null | tail -n 1 || true)"
+  if [ -n "${nvm_guess:-}" ] && [ -x "$nvm_guess" ]; then
+    printf '%s\n' "$nvm_guess"
+    return 0
+  fi
+  return 1
+}
+
+export CODEX_CLI_PATH="${CODEX_CLI_PATH:-$(resolve_codex_cli || true)}"
 
 if [ -z "$CODEX_CLI_PATH" ]; then
     echo "Error: Codex CLI not found. Install with: npm i -g @openai/codex"
