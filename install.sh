@@ -296,7 +296,7 @@ if [ -d "$HOME/.nvm/versions/node" ]; then
   fi
 fi
 
-pkill -f "http.server 5175" 2>/dev/null
+pkill -f "http.server 5175" 2>/dev/null || true
 sleep 0.3
 
 if [ -d "$WEBVIEW_DIR" ] && [ "$(ls -A "$WEBVIEW_DIR" 2>/dev/null)" ]; then
