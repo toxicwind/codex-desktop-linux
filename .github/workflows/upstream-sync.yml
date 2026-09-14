@@ -20,14 +20,24 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Add upstream remote
+        id: upstream
         run: |
-          git remote add upstream https://github.com/codex-team/codex.desktop.git || true
-          git fetch upstream
+          UPSTREAM_URL="https://github.com/codex-team/codex.desktop.git"
+          git remote add upstream "$UPSTREAM_URL" || true
+          if git ls-remote --exit-code --heads "$UPSTREAM_URL" >/dev/null 2>&1; then
+            git fetch upstream
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Upstream codex-team/codex.desktop does not exist (yet); nothing to sync."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Merge upstream
+        if: steps.upstream.outputs.available == 'true'
         run: |
           git checkout ${{ github.event.repository.default_branch }}
           git merge upstream/${{ github.event.repository.default_branch }} --no-edit || true
 
       - name: Push
+        if: steps.upstream.outputs.available == 'true'
         run: git push origin ${{ github.event.repository.default_branch }}
