@@ -48,7 +48,7 @@ npm i -g @openai/codex
 ## Quick start (fresh machine)
 
 ```bash
-git clone https://github.com/<your-user>/codex-desktop-linux.git ~/.local/opt/codex-desktop
+git clone https://github.com/toxicwind/codex-desktop-linux.git ~/.local/opt/codex-desktop
 cd ~/.local/opt/codex-desktop
 ./install.sh
 ./scripts/install-desktop-entry.sh
@@ -72,6 +72,7 @@ Config knobs:
 - `CODEX_UPDATE_INTERVAL_SEC=21600`: check interval.
 - `CODEX_FORCE_UPDATE=1`: force maintenance now.
 - `CODEX_FORCE_REFRESH_EVERY_SEC=604800`: force DMG refresh cadence.
+- `CODEX_CLI_AUTO_UPDATE=0`: disable automatic Codex CLI upgrades via npm (default 1: maintain runs `npm i -g @openai/codex@latest` when a newer CLI is published).
 
 ## Live GUI status (no more blind updates)
 
