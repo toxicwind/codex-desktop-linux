@@ -1,7 +1,8 @@
 name: Upstream Sync
 on:
-  schedule:
-    - cron: '0 0 * * *'
+  # Scheduled sync disabled 2026-09-14: the configured upstream
+  # (codex-team/codex.desktop) does not exist on GitHub, so the daily
+  # run can only fail. Kept as manual dispatch for future use.
   workflow_dispatch:
 
 jobs:
